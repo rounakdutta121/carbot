@@ -73,7 +73,7 @@
             width: 100%;
         }
 
-        /* Comparison Table - Enthusiast Style */
+        /* Comparison Table */
         .comparison-container {
             width: 100%;
             overflow-x: auto;
@@ -144,6 +144,17 @@
         .btn-neon:hover {
             box-shadow: 0 0 15px var(--accent-glow);
             transform: translateY(-2px);
+        }
+
+        /* Action Cards specifically for "type: cards" */
+        .action-card {
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .action-card:hover {
+            border-color: rgba(59, 130, 246, 0.5);
+            background: rgba(59, 130, 246, 0.1);
+            transform: translateY(-5px);
         }
     </style>
 </head>
@@ -245,6 +256,12 @@
                         return results;
                     }
 
+                    // Handle "cards" structure (Browse Cars, etc)
+                    if (obj.type === 'cards' && Array.isArray(obj.cards)) {
+                        results.push(obj);
+                        return results;
+                    }
+
                     const isCompareType = obj.type === 'compare' && obj.rows;
                     const isLegacyComparison = !!(obj.sections && obj.sections.some(s => s.rows));
                     const isCard = !!(obj.title || obj.image || (obj.sections && obj.sections.length > 0 && !isLegacyComparison && !isCompareType));
@@ -276,10 +293,13 @@
                 turnContainer.className = 'flex flex-col gap-8 w-full items-start';
                 
                 normalizedItems.forEach(item => {
+                    const isActionCards = item.type === 'cards' && item.cards;
                     const isNewCompare = item.type === 'compare' && item.rows;
                     const isLegacyCompare = !!(item.sections && item.sections.some(s => s.rows));
                     
-                    if (isNewCompare) {
+                    if (isActionCards) {
+                        turnContainer.appendChild(renderActionCards(item));
+                    } else if (isNewCompare) {
                         turnContainer.appendChild(renderNewCompareTable(item));
                     } else if (isLegacyCompare) {
                         turnContainer.appendChild(renderLegacyCompareTable(item));
@@ -302,6 +322,39 @@
                 addMessage(`<strong>FATAL ERROR:</strong> ${error.message}`, 'bot', true, true);
             }
         });
+
+        // New Rendering for Intent/Action Cards
+        function renderActionCards(data) {
+            const grid = document.createElement('div');
+            grid.className = 'car-results-grid w-full';
+            
+            data.cards.forEach(card => {
+                const el = document.createElement('div');
+                el.className = 'action-card glass rounded-[1.5rem] p-6 border-white/5 shadow-xl flex flex-col gap-3';
+                el.onclick = () => {
+                    userInput.value = card.title;
+                    chatForm.dispatchEvent(new Event('submit'));
+                };
+                el.innerHTML = `
+                    <div class="w-10 h-10 bg-blue-600/20 rounded-xl flex items-center justify-center text-blue-400">
+                        <i class="fas ${getIconForTitle(card.title)}"></i>
+                    </div>
+                    <h3 class="text-white font-bold uppercase tracking-tight text-sm">${card.title}</h3>
+                    <p class="text-slate-400 text-xs leading-relaxed font-light">${card.description}</p>
+                `;
+                grid.appendChild(el);
+            });
+            return grid;
+        }
+
+        function getIconForTitle(title) {
+            const t = title.toLowerCase();
+            if (t.includes('browse')) return 'fa-search';
+            if (t.includes('compare')) return 'fa-columns';
+            if (t.includes('detail')) return 'fa-info-circle';
+            if (t.includes('policy')) return 'fa-file-contract';
+            return 'fa-arrow-right';
+        }
 
         function renderNewCompareTable(data) {
             const container = document.createElement('div');
