@@ -156,6 +156,19 @@
             background: rgba(59, 130, 246, 0.1);
             transform: translateY(-5px);
         }
+
+        /* Form Styling */
+        .form-input-field {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            transition: all 0.2s ease;
+        }
+        .form-input-field:focus {
+            border-color: #3b82f6;
+            background: rgba(15, 23, 42, 0.9);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -225,6 +238,7 @@
         const userInput = document.getElementById('userInput');
 
         const WEBHOOK_URL = 'https://damnart-ai-guladab.n8n-wsk.com/webhook/car-sales'; 
+        const LEAD_WEBHOOK_URL = 'https://damnart-ai-guladab.n8n-wsk.com/webhook/car-bot';
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -253,6 +267,12 @@
                     if (!obj || typeof obj !== 'object') return results;
                     if (Array.isArray(obj)) {
                         obj.forEach(item => extractAllEntities(item, results));
+                        return results;
+                    }
+
+                    // Handle "form" structure
+                    if (obj.type === 'form' && Array.isArray(obj.fields)) {
+                        results.push(obj);
                         return results;
                     }
 
@@ -293,11 +313,14 @@
                 turnContainer.className = 'flex flex-col gap-8 w-full items-start';
                 
                 normalizedItems.forEach(item => {
+                    const isForm = item.type === 'form' && item.fields;
                     const isActionCards = item.type === 'cards' && item.cards;
                     const isNewCompare = item.type === 'compare' && item.rows;
                     const isLegacyCompare = !!(item.sections && item.sections.some(s => s.rows));
                     
-                    if (isActionCards) {
+                    if (isForm) {
+                        turnContainer.appendChild(renderFormItem(item));
+                    } else if (isActionCards) {
                         turnContainer.appendChild(renderActionCards(item));
                     } else if (isNewCompare) {
                         turnContainer.appendChild(renderNewCompareTable(item));
@@ -322,6 +345,87 @@
                 addMessage(`<strong>FATAL ERROR:</strong> ${error.message}`, 'bot', true, true);
             }
         });
+
+        // Form Rendering Logic
+        function renderFormItem(data) {
+            const formContainer = document.createElement('div');
+            formContainer.className = 'w-full max-w-lg glass rounded-[2rem] p-8 border-l-4 border-l-blue-500 shadow-2xl';
+            
+            const titleHtml = data.title ? `<h3 class="text-white font-black uppercase tracking-tight text-lg mb-6">${data.title}</h3>` : '';
+            
+            let fieldsHtml = '';
+            data.fields.forEach(field => {
+                const requiredAttr = field.required ? 'required' : '';
+                fieldsHtml += `
+                    <div class="mb-5">
+                        <label class="block text-[10px] font-black uppercase tracking-widest text-blue-400 mb-2">${field.label}</label>
+                        <input 
+                            type="${field.type || 'text'}" 
+                            name="${field.name}" 
+                            placeholder="${field.placeholder || ''}" 
+                            ${requiredAttr}
+                            class="w-full form-input-field rounded-xl px-4 py-3 text-sm focus:outline-none"
+                        >
+                    </div>
+                `;
+            });
+
+            formContainer.innerHTML = `
+                ${titleHtml}
+                <form onsubmit="handleFormSubmit(event)">
+                    <div class="space-y-1">
+                        ${fieldsHtml}
+                    </div>
+                    <button type="submit" data-action="${data.submit?.action}" class="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                        ${data.submit?.label || 'Submit'}
+                    </button>
+                </form>
+            `;
+            return formContainer;
+        }
+
+        window.handleFormSubmit = async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            const action = submitBtn.getAttribute('data-action');
+
+            // Disable UI
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Processing...';
+
+            try {
+                const response = await fetch(LEAD_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: action,
+                        lead_data: data,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                // Success visual
+                form.parentElement.innerHTML = `
+                    <div class="text-center py-6">
+                        <div class="w-16 h-16 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-check text-2xl"></i>
+                        </div>
+                        <h3 class="text-white font-bold uppercase tracking-tight">Enquiry Transmitted</h3>
+                        <p class="text-slate-400 text-xs mt-2">A specialist will review your telemetry shortly.</p>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Lead Submission Error:', error);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Retry Submission';
+                addMessage("Data transmission failed. Check connection and retry.", 'bot', true);
+            }
+        };
 
         // New Rendering for Intent/Action Cards
         function renderActionCards(data) {
